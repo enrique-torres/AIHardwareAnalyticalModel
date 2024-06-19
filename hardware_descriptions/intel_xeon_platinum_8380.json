@@ -1,0 +1,54 @@
+{
+    "chip_name": "Intel Xeon Platinum 8380",
+    "baseline_bitlength": 64,
+    "memory_hierarchy": {
+        "L1_cache": {
+            "size": "64KB",
+            "bandwidth": "1TB/s",
+            "latency": "1ns"
+        },
+        "L2_cache": {
+            "size": "1MB",
+            "bandwidth": "500GB/s",
+            "latency": "5ns"
+        },
+        "L3_cache": {
+            "size": "38.5MB",
+            "bandwidth": "200GB/s",
+            "latency": "20ns"
+        },
+        "DRAM": {
+            "type": "DDR4",
+            "size": "6TB",
+            "bandwidth": "200GB/s",
+            "latency": "70ns"
+        }
+    },
+    "compute_units": 40,
+    "datatypes": {
+        "INT8": {
+            "bitlength": 8,
+            "compute_throughput": "320TOPS"
+        },
+        "INT16": {
+            "bitlength": 16,
+            "compute_throughput": "160TFLOPS"
+        },
+        "FP16": {
+            "bitlength": 16,
+            "compute_throughput": "160TFLOPS"
+        },
+        "INT32": {
+            "bitlength": 32,
+            "compute_throughput": "80TFLOPS"
+        },
+        "FP32": {
+            "bitlength": 32,
+            "compute_throughput": "80TFLOPS"
+        },
+        "FP64": {
+            "bitlength": 64,
+            "compute_throughput": "40TFLOPS"
+        }
+    }
+}

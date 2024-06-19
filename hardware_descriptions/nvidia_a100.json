@@ -1,0 +1,49 @@
+{
+    "chip_name": "NVIDIA A100",
+    "baseline_bitlength": 32,
+    "memory_hierarchy": {
+        "L1_cache": {
+            "size": "192KB",
+            "bandwidth": "6.7TB/s",
+            "latency": "1ns"
+        },
+        "L2_cache": {
+            "size": "40MB",
+            "bandwidth": "6.1TB/s",
+            "latency": "2ns"
+        },
+        "DRAM": {
+            "type": "HBM2e",
+            "size": "80GB",
+            "bandwidth": "1.6TB/s",
+            "latency": "70ns"
+        }
+    },
+    "compute_units": 108,
+    "datatypes": {
+        "INT4": {
+            "bitlength": 4,
+            "compute_throughput": "2496TOPS"
+        },
+        "INT8": {
+            "bitlength": 8,
+            "compute_throughput": "1248TOPS"
+        },
+        "FP16": {
+            "bitlength": 16,
+            "compute_throughput": "624TFLOPS"
+        },
+        "BFloat16": {
+            "bitlength": 16,
+            "compute_throughput": "624TFLOPS"
+        },
+        "FP32": {
+            "bitlength": 32,
+            "compute_throughput": "312TFLOPS"
+        },
+        "FP64": {
+            "bitlength": 64,
+            "compute_throughput": "19.5TFLOPS"
+        }
+    }
+}

@@ -1,0 +1,50 @@
+{
+    "chip_name": "Qualcomm Snapdragon 888",
+    "baseline_bitlength": 32,
+    "memory_hierarchy": {
+        "L1_cache": {
+            "size": "192KB",
+            "bandwidth": "800GB/s",
+            "latency": "1ns"
+        },
+        "L2_cache": {
+            "size": "512KB",
+            "bandwidth": "400GB/s",
+            "latency": "4ns"
+        },
+        "L3_cache": {
+            "size": "4MB",
+            "bandwidth": "200GB/s",
+            "latency": "12ns"
+        },
+        "DRAM": {
+            "type": "LPDDR5",
+            "size": "16GB",
+            "bandwidth": "51.2GB/s",
+            "latency": "70ns"
+        }
+    },
+    "compute_units": 8,
+    "datatypes": {
+        "INT4": {
+            "bitlength": 4,
+            "compute_throughput": "2496TOPS"
+        },
+        "INT8": {
+            "bitlength": 8,
+            "compute_throughput": "1248TOPS"
+        },
+        "FP16": {
+            "bitlength": 16,
+            "compute_throughput": "624TFLOPS"
+        },
+        "FP32": {
+            "bitlength": 32,
+            "compute_throughput": "312TFLOPS"
+        },
+        "FP64": {
+            "bitlength": 64,
+            "compute_throughput": "19.5TFLOPS"
+        }
+    }
+}

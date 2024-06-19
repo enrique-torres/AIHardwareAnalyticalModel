@@ -1,0 +1,45 @@
+{
+    "chip_name": "NVIDIA GeForce RTX 3080",
+    "baseline_bitlength": 32,
+    "memory_hierarchy": {
+        "L1_cache": {
+            "size": "128KB",
+            "bandwidth": "2.5TB/s",
+            "latency": "1ns"
+        },
+        "L2_cache": {
+            "size": "5MB",
+            "bandwidth": "1TB/s",
+            "latency": "4ns"
+        },
+        "DRAM": {
+            "type": "GDDR6X",
+            "size": "10GB",
+            "bandwidth": "760GB/s",
+            "latency": "50ns"
+        }
+    },
+    "compute_units": 68,
+    "datatypes": {
+        "INT8": {
+            "bitlength": 8,
+            "compute_throughput": "930TOPS"
+        },
+        "FP16": {
+            "bitlength": 16,
+            "compute_throughput": "465TFLOPS"
+        },
+        "BFloat16": {
+            "bitlength": 16,
+            "compute_throughput": "465TFLOPS"
+        },
+        "FP32": {
+            "bitlength": 32,
+            "compute_throughput": "232TFLOPS"
+        },
+        "FP64": {
+            "bitlength": 64,
+            "compute_throughput": "7.25TFLOPS"
+        }
+    }
+}

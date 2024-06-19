@@ -1,0 +1,54 @@
+{
+    "chip_name": "Intel Core i7-11700K",
+    "baseline_bitlength": 64,
+    "memory_hierarchy": {
+        "L1_cache": {
+            "size": "64KB",
+            "bandwidth": "700GB/s",
+            "latency": "1ns"
+        },
+        "L2_cache": {
+            "size": "512KB",
+            "bandwidth": "200GB/s",
+            "latency": "5ns"
+        },
+        "L3_cache": {
+            "size": "16MB",
+            "bandwidth": "100GB/s",
+            "latency": "15ns"
+        },
+        "DRAM": {
+            "type": "DDR4",
+            "size": "32GB",
+            "bandwidth": "25.6GB/s",
+            "latency": "70ns"
+        }
+    },
+    "compute_units": 8,
+    "datatypes": {
+        "INT8": {
+            "bitlength": 8,
+            "compute_throughput": "30TOPS"
+        },
+        "INT16": {
+            "bitlength": 16,
+            "compute_throughput": "15TFLOPS"
+        },
+        "FP16": {
+            "bitlength": 16,
+            "compute_throughput": "15TFLOPS"
+        },
+        "INT32": {
+            "bitlength": 32,
+            "compute_throughput": "7.5TFLOPS"
+        },
+        "FP32": {
+            "bitlength": 32,
+            "compute_throughput": "7.5TFLOPS"
+        },
+        "FP64": {
+            "bitlength": 64,
+            "compute_throughput": "3.75TFLOPS"
+        }
+    }
+}
