@@ -2,9 +2,9 @@
 import csv
 from typing import Dict, List
 
-from core.menu_helpers import *
-from core.hardware_description_helpers import *
-from core.network_helpers import *
+from menu_helpers import *
+from hardware_description_helpers import *
+from network_helpers import *
 
 def parse_bitlengths(folder_path, layers_dict: Dict[str, Layer], acts_file_name = "/activation_bitlengths.csv", wgts_file_name = "/weights_bitlengths.csv"):
     layer_names = []
@@ -32,26 +32,14 @@ def parse_bitlengths(folder_path, layers_dict: Dict[str, Layer], acts_file_name 
                 bitlength = float(row[i])
                 layers_dict[layer_names[i]]._weight_bitlengths.append(bitlength)
 
-def get_closest_datatype(bitlength, datatypes, type_of_data):
+def get_closest_datatype(bitlength, datatypes):
     closest_type = None
     smallest_diff = float('inf')
-    
     for dtype, specs in datatypes.items():
-        if type_of_data == "integer":
-            if "INT" in dtype:
-                diff = specs['bitlength'] - bitlength
-                if 0 <= diff < smallest_diff:
-                    smallest_diff = diff
-                    closest_type = dtype
-        elif type_of_data == "float":
-            if "FP" in dtype:
-                diff = specs['bitlength'] - bitlength
-                if 0 <= diff < smallest_diff:
-                    smallest_diff = diff
-                    closest_type = dtype
-        else:
-            print(f"Unrecognized type of data selected for the bitlengths of the network: {type_of_data}. Exiting")
-            exit(1)
+        diff = specs['bitlength'] - bitlength
+        if 0 <= diff < smallest_diff:
+            smallest_diff = diff
+            closest_type = dtype
     return closest_type
 
 def calculate_transfer_time(size_in_bits: int, bandwidth: int) -> float:
@@ -60,18 +48,16 @@ def calculate_transfer_time(size_in_bits: int, bandwidth: int) -> float:
     return size_in_bits / bandwidth
 
 def simulate_chunked_transfer(size_in_bits: int, source_bandwidth: str, dest_bandwidth: str, chunk_size: int) -> float:
-    if isinstance(source_bandwidth, str):
-        source_bandwidth = parse_bandwidth(source_bandwidth)
-    if isinstance(dest_bandwidth, str):
-        dest_bandwidth = parse_bandwidth(dest_bandwidth)
+    source_bandwidth_int = parse_bandwidth(source_bandwidth)
+    dest_bandwidth_int = parse_bandwidth(dest_bandwidth)
     
     total_transfer_time = 0
     remaining_size = size_in_bits
 
     while remaining_size > 0:
         chunk = min(remaining_size, chunk_size)
-        total_transfer_time += calculate_transfer_time(chunk, source_bandwidth)
-        total_transfer_time += calculate_transfer_time(chunk, dest_bandwidth)
+        total_transfer_time += calculate_transfer_time(chunk, source_bandwidth_int)
+        total_transfer_time += calculate_transfer_time(chunk, dest_bandwidth_int)
         remaining_size -= chunk
 
     return total_transfer_time
@@ -85,8 +71,8 @@ def simulate_layer(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, baseli
 
     for layer_depth, (act_bitlength, wgt_bitlength) in enumerate(zip(layer._activation_bitlengths, layer._weight_bitlengths)):
         # Determine closest available datatype
-        act_dtype = get_closest_datatype(act_bitlength, datatypes, layer.datatype)
-        wgt_dtype = get_closest_datatype(wgt_bitlength, datatypes, layer.datatype)
+        act_dtype = get_closest_datatype(act_bitlength, datatypes)
+        wgt_dtype = get_closest_datatype(wgt_bitlength, datatypes)
 
         # Calculate sizes in bits
         act_size_baseline = layer.num_act_in_gradients * baseline_bitlength * batch_size
@@ -100,40 +86,37 @@ def simulate_layer(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, baseli
         def get_memory_level(size, hierarchy, layer_depth):
             # If we are on the first layer, we are always getting our inputs from DRAM
             if layer_depth == 0:
-                return 'DRAM', hierarchy['DRAM']['size'] - size
+                return 'DRAM'
             for level in ['L1_cache', 'L2_cache', 'L3_cache', 'DRAM']:
-                if size <= hierarchy[level]['size']:
-                    return level, hierarchy[level]['size'] - size
-            print("ERROR: Not enough DRAM memory for model. Exiting.")
-            exit(1)
+                if size <= int(hierarchy[level]['size'][:-2]) * 1024:
+                    return level
+            print("ERROR: Not enough DRAM memory for model")
+            return 'DRAM'
 
-        # First we read the weights for the layer, which we'll keep on the closest memory level to the compute units possible
-        wgt_memory_level_optimized, remaining_level_space_after_wgt_optimized = get_memory_level(wgt_size_optimized, memory_hierarchy, layer_depth)
-        wgt_memory_level_arbitrary, remaining_level_space_after_wgt_arbitrary = get_memory_level(wgt_size_arbitrary, memory_hierarchy, layer_depth)
-
-        act_memory_level_optimized, _ = get_memory_level(act_size_optimized, memory_hierarchy, layer_depth)
-        act_memory_level_arbitrary, _ = get_memory_level(act_size_arbitrary, memory_hierarchy, layer_depth)
-        
+        act_memory_level_optimized = get_memory_level(act_size_optimized, memory_hierarchy, layer_depth)
+        wgt_memory_level_optimized = get_memory_level(wgt_size_optimized, memory_hierarchy, layer_depth)
+        act_memory_level_arbitrary = get_memory_level(act_size_arbitrary, memory_hierarchy, layer_depth)
+        wgt_memory_level_arbitrary = get_memory_level(wgt_size_arbitrary, memory_hierarchy, layer_depth)
 
         # Calculate chunked transfer times if needed for optimized datatypes
         if act_memory_level_optimized != 'L1_cache':
-            act_transfer_time_optimized = simulate_chunked_transfer(act_size_optimized, memory_hierarchy[act_memory_level_optimized]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['L1_cache']['size'])
+            act_transfer_time_optimized = simulate_chunked_transfer(act_size_optimized, memory_hierarchy[act_memory_level_optimized]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], int(memory_hierarchy['L1_cache']['size'][:-2]) * 1024)
         else:
             act_transfer_time_optimized = calculate_transfer_time(act_size_optimized, memory_hierarchy['L1_cache']['bandwidth'])
 
         if wgt_memory_level_optimized != 'L1_cache':
-            wgt_transfer_time_optimized = simulate_chunked_transfer(wgt_size_optimized, memory_hierarchy[wgt_memory_level_optimized]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['L1_cache']['size'])
+            wgt_transfer_time_optimized = simulate_chunked_transfer(wgt_size_optimized, memory_hierarchy[wgt_memory_level_optimized]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], int(memory_hierarchy['L1_cache']['size'][:-2]) * 1024)
         else:
             wgt_transfer_time_optimized = calculate_transfer_time(wgt_size_optimized, memory_hierarchy['L1_cache']['bandwidth'])
 
         # Calculate chunked transfer times if needed for arbitrary bitlengths
         if act_memory_level_arbitrary != 'L1_cache':
-            act_transfer_time_arbitrary = simulate_chunked_transfer(act_size_arbitrary, memory_hierarchy[act_memory_level_arbitrary]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['L1_cache']['size']) * (1 + software_overhead)
+            act_transfer_time_arbitrary = simulate_chunked_transfer(act_size_arbitrary, memory_hierarchy[act_memory_level_arbitrary]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], int(memory_hierarchy['L1_cache']['size'][:-2]) * 1024) * (1 + software_overhead)
         else:
             act_transfer_time_arbitrary = calculate_transfer_time(act_size_arbitrary, memory_hierarchy['L1_cache']['bandwidth']) * (1 + software_overhead)
 
         if wgt_memory_level_arbitrary != 'L1_cache':
-            wgt_transfer_time_arbitrary = simulate_chunked_transfer(wgt_size_arbitrary, memory_hierarchy[wgt_memory_level_arbitrary]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['L1_cache']['size']) * (1 + software_overhead)
+            wgt_transfer_time_arbitrary = simulate_chunked_transfer(wgt_size_arbitrary, memory_hierarchy[wgt_memory_level_arbitrary]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'], int(memory_hierarchy['L1_cache']['size'][:-2]) * 1024) * (1 + software_overhead)
         else:
             wgt_transfer_time_arbitrary = calculate_transfer_time(wgt_size_arbitrary, memory_hierarchy['L1_cache']['bandwidth']) * (1 + software_overhead)
 
@@ -141,8 +124,10 @@ def simulate_layer(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, baseli
         wgt_transfer_time_baseline = calculate_transfer_time(wgt_size_baseline, memory_hierarchy['DRAM']['bandwidth'])
 
         # Calculate compute times
-        compute_time_baseline = layer.forward_macs / (datatypes['FP32']['compute_throughput'] * compute_units)
-        compute_time_optimized = layer.forward_macs / (datatypes[act_dtype]['compute_throughput'] * compute_units)
+        compute_throughput_baseline = parse_throughput(datatypes['FP32']['compute_throughput'])
+        compute_throughput_optimized = parse_throughput(datatypes[act_dtype]['compute_throughput'])
+        compute_time_baseline = layer.forward_macs / (compute_throughput_baseline * compute_units)
+        compute_time_optimized = layer.forward_macs / (compute_throughput_optimized * compute_units)
 
         total_transfer_time_baseline += act_transfer_time_baseline + wgt_transfer_time_baseline
         total_transfer_time_optimized += act_transfer_time_optimized + wgt_transfer_time_optimized
@@ -196,18 +181,7 @@ def main(args):
 
     hardware_model = read_hardware_json(hardware_model_path)
     memory_hierarchy = hardware_model['memory_hierarchy']
-
-    # Convert size and bandwith strings to standardized integer values
-    for memory_level in memory_hierarchy.keys():
-        memory_hierarchy[memory_level]['size'] = parse_size(memory_hierarchy[memory_level]['size'])
-        memory_hierarchy[memory_level]['bandwith'] = parse_bandwidth(memory_hierarchy[memory_level]['bandwidth'])
-    
     datatypes = hardware_model['datatypes']
-
-    # Convert throughput strings to standardized integer values
-    for datatype in datatypes.keys():
-        datatypes[datatype]['compute_throughput'] = parse_throughput(datatypes[datatype]['compute_throughput'])
-
     compute_units = hardware_model['compute_units']
 
     if args.data is None:
