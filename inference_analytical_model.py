@@ -112,9 +112,6 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
         wgt_size_baseline = layer.num_weight_gradients * baseline_bitlength_int
         wgt_size_optimized = layer.num_weight_gradients * datatypes[wgt_dtype]['bitlength']
         wgt_size_arbitrary = layer.num_weight_gradients * wgt_bitlength
-        act_size_baseline = act_in_size_baseline + act_out_size_baseline
-        act_size_optimized = act_in_size_optimized + act_out_size_optimized
-        act_size_arbitrary = act_in_size_arbitrary + act_out_size_arbitrary
 
         # First we read the weights for the layer, which we'll keep on the closest memory level to the compute units possible
         wgt_memory_level_baseline, remaining_level_space_after_wgt_baseline = get_memory_level(wgt_size_baseline, memory_hierarchy, layer_depth)
@@ -130,9 +127,15 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
         memory_hierarchy_updated_arbitrary[wgt_memory_level_arbitrary]['size'] = remaining_level_space_after_wgt_arbitrary
 
         # Now we need to do the same thing but for activations, keeping in mind that we need to handle both input activations on-chip, as well as output activations
-        act_in_memory_level_baseline, _ = get_memory_level(act_in_size_baseline, memory_hierarchy_updated_baseline, layer_depth)
-        act_in_memory_level_optimized, _ = get_memory_level(act_in_size_optimized, memory_hierarchy_updated_optimized, layer_depth)
-        act_in_memory_level_arbitrary, _ = get_memory_level(act_in_size_arbitrary, memory_hierarchy_updated_arbitrary, layer_depth)
+        # If it's the first layer's inputs, we always ready them from DRAM
+        if layer_depth != 0:
+            act_in_memory_level_baseline, _ = get_memory_level(act_in_size_baseline, memory_hierarchy_updated_baseline, layer_depth)
+            act_in_memory_level_optimized, _ = get_memory_level(act_in_size_optimized, memory_hierarchy_updated_optimized, layer_depth)
+            act_in_memory_level_arbitrary, _ = get_memory_level(act_in_size_arbitrary, memory_hierarchy_updated_arbitrary, layer_depth)
+        else:
+            act_in_memory_level_baseline = 'DRAM'
+            act_in_memory_level_optimized = 'DRAM'
+            act_in_memory_level_arbitrary = 'DRAM'
 
         # Now we have to check whether the weights fit in L1. There are two main scenarios: weights for the layer fit in the lowest memory level or they don't
         # In the first scenario, we read input activations from where we left the output activations of the previous layer. We then generate output activations for
@@ -142,7 +145,7 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
         # level for the next layer to read from. Finally, per chunk of input activations that is read to L1, all weights from the layer will be read to compute output
         # activations for that chunk of input activations. For simplicity purposes, we simulate the writing of output activations on the next layer, since then we can
         # simulate as if the hardware was scheduled for optimal data transfers.
-        L1_size = memory_hierarchy['L1_cache']['size']
+        #L1_size = memory_hierarchy['L1_cache']['size']
         if wgt_memory_level_baseline == 'L1_cache':
             total_time_baseline, transfer_time_baseline, compute_time_baseline = calculate_time_weights_L1(layer, memory_hierarchy_updated_baseline, datatypes, 
                                                                                                            compute_units, baseline_bitlength, software_overhead, 
@@ -168,16 +171,46 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
                                                                                                               act_in_memory_level_optimized, wgt_memory_level_optimized)
             #print(f"Weights don't fit on L1 for optimized of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_optimized}. Selected weights level: {wgt_memory_level_optimized}")
         if wgt_memory_level_arbitrary == 'L1_cache':
+            # On chip, the arbitrary bitlengths will be converted to available datatypes by software/hardware compressor/decompressor units. As such, unless our architecture is bit-serial
+            # we have to use the "available" datatypes instead of arbitrary for on-chip transfers
+            if act_in_memory_level_arbitrary != 'DRAM':
+                act_in_real_transfer_data = act_in_size_optimized
+                act_in_real_memory_level = act_in_memory_level_optimized
+            else:
+                act_in_real_transfer_data = act_in_size_arbitrary
+                act_in_real_memory_level = act_in_memory_level_arbitrary
+            if wgt_memory_level_arbitrary != 'DRAM':
+                wgt_real_transfer_data = wgt_size_optimized
+                wgt_real_memory_level = wgt_memory_level_optimized
+            else:
+                wgt_real_transfer_data = wgt_size_arbitrary
+                wgt_real_memory_level = wgt_memory_level_arbitrary
+            
             total_time_arbitrary, transfer_time_arbitrary, compute_time_arbitrary = calculate_time_weights_L1(layer, memory_hierarchy_updated_arbitrary, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
-                                                                                                              act_in_size_arbitrary, act_out_size_arbitrary, wgt_size_arbitrary, 
-                                                                                                              act_in_memory_level_arbitrary, wgt_memory_level_arbitrary)
+                                                                                                              act_in_real_transfer_data, act_out_size_arbitrary, wgt_real_transfer_data, 
+                                                                                                              act_in_real_memory_level, wgt_real_memory_level)
             #print(f"Weights fit on L1 for arbitrary of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_arbitrary}. Remaining space: {L1_size - wgt_size_arbitrary}")
         else:
+            # On chip, the arbitrary bitlengths will be converted to available datatypes by software/hardware compressor/decompressor units. As such, unless our architecture is bit-serial
+            # we have to use the "available" datatypes instead of arbitrary for on-chip transfers
+            if act_in_memory_level_arbitrary != 'DRAM':
+                act_in_real_transfer_data = act_in_size_optimized
+                act_in_real_memory_level = act_in_memory_level_optimized
+            else:
+                act_in_real_transfer_data = act_in_size_arbitrary
+                act_in_real_memory_level = act_in_memory_level_arbitrary
+            if wgt_memory_level_arbitrary != 'DRAM':
+                wgt_real_transfer_data = wgt_size_optimized
+                wgt_real_memory_level = wgt_memory_level_optimized
+            else:
+                wgt_real_transfer_data = wgt_size_arbitrary
+                wgt_real_memory_level = wgt_memory_level_arbitrary
+
             total_time_arbitrary, transfer_time_arbitrary, compute_time_arbitrary = calculate_time_weights_not_L1(layer, memory_hierarchy_updated_arbitrary, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
-                                                                                                              act_in_size_arbitrary, act_out_size_arbitrary, wgt_size_arbitrary, 
-                                                                                                              act_in_memory_level_arbitrary, wgt_memory_level_arbitrary)
+                                                                                                              act_in_real_transfer_data, act_out_size_arbitrary, wgt_real_transfer_data, 
+                                                                                                              act_in_real_memory_level, wgt_real_memory_level)
             #print(f"Weights don't fit on L1 for arbitrary of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_arbitrary}. Selected weights level: {wgt_memory_level_arbitrary}")
 
         total_transfer_time_baseline += transfer_time_baseline
@@ -252,7 +285,7 @@ def main(args):
 
     # Print the results to terminal
     if args.script_run:
-        print(f"{results['speedup_optimized']:.2f} {results['speedup_arbitrary']:.2f}")
+        print(f"{results['speedup_optimized']:.2f},{results['speedup_arbitrary']:.2f}")
     else:
         print(f"Baseline Total Time: {results['baseline_total_time']:.6f}")
         print(f"Optimized Total Time: {results['optimized_total_time']:.6f}")
