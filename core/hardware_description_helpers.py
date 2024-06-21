@@ -1,4 +1,16 @@
 import json
+from .menu_helpers import *
+
+# Determine which memory level to use based on size and availability
+def get_memory_level(size, hierarchy, layer_depth):
+    # If we are on the first layer, we are always getting our inputs from DRAM
+    if layer_depth == 0:
+        return 'DRAM', hierarchy['DRAM']['size'] - size
+    for level in ['L1_cache', 'L2_cache', 'L3_cache', 'DRAM']:
+        if level in hierarchy.keys() and size < hierarchy[level]['size']:
+            return level, hierarchy[level]['size'] - size
+    print("ERROR: Not enough DRAM memory for model. Exiting.")
+    exit(1)
 
 def read_hardware_json(file_path: str) -> dict:
     with open(file_path, 'r') as file:
@@ -58,3 +70,38 @@ def parse_throughput(throughput_str: str) -> float:
                 raise ValueError(f"Unable to parse the numeric value from {throughput_str}")
     
     raise ValueError(f"Unknown throughput unit in {throughput_str}")
+
+def parse_datatype(datatype: str):
+    units = {
+        "FP64":(64, "float"), "FP32": (32, "float"), "FP16": (16, "float"), "BF16": (16, "float"), "FP8": (8, "float"), "FP4": (4, "float"),
+        "INT64": (64, "integer"), "INT32": (32, "integer"), "INT16": (16, "integer"), "INT8": (8, "integer"), "INT4": (4, "integer")
+    }
+    if datatype in units.keys():
+        return units[datatype]
+    else:
+        print(f"Unrecognized datatype selected for conversion. Error. Exiting now.")
+        exit(1)
+
+def load_hardware_model(hardware_json_path):
+    if hardware_json_path:
+        hardware_model_path = hardware_json_path
+    else:
+        hardware_model_path = select_hardware_model("hardware_descriptions")
+
+    hardware_model = read_hardware_json(hardware_model_path)
+    memory_hierarchy = hardware_model['memory_hierarchy']
+
+    # Convert size and bandwith strings to standardized integer values
+    for memory_level in memory_hierarchy.keys():
+        memory_hierarchy[memory_level]['size'] = parse_size(memory_hierarchy[memory_level]['size'])
+        memory_hierarchy[memory_level]['bandwith'] = parse_bandwidth(memory_hierarchy[memory_level]['bandwidth'])
+    
+    datatypes = hardware_model['datatypes']
+
+    # Convert throughput strings to standardized integer values
+    for datatype in datatypes.keys():
+        datatypes[datatype]['compute_throughput'] = parse_throughput(datatypes[datatype]['compute_throughput'])
+
+    compute_units = hardware_model['compute_units']
+
+    return memory_hierarchy, datatypes, compute_units

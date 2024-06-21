@@ -1,0 +1,15 @@
+﻿layer_name,next_layer,layer_type,num_act_in_gradients,num_act_out_gradients,num_weight_gradients,forward_macs,mp_extra_compute
+Quant_IP-2-27,ReLU-2-28,Quant_IP-2-27,13,512,7170,7170,0
+ReLU-2-28,Quant_IP-2-29,ReLU-2-28,512,512,0,512,0
+Quant_IP-2-29,ReLU-2-30,Quant_IP-2-29,512,256,131330,131330,0
+ReLU-2-30,Quant_IP-2-31,ReLU-2-30,256,256,0,256,0
+Quant_IP-2-31,ReLU-2-32,Quant_IP-2-31,256,64,16450,16450,0
+ReLU-2-32,Quant_IP-2-33,ReLU-2-32,64,64,0,64,0
+Quant_IP-2-33,ReLU-2-34,Quant_IP-2-33,64,16,1042,1042,0
+ReLU-2-34,Quant_IP-2-35,ReLU-2-34,16,16,0,16,0
+Quant_IP-2-35,ReLU-2-36,Quant_IP-2-35,367,512,188418,188418,0
+ReLU-2-36,Quant_IP-2-37,ReLU-2-36,512,512,0,512,0
+Quant_IP-2-37,ReLU-2-38,Quant_IP-2-37,512,256,131330,131330,0
+ReLU-2-38,Quant_IP-2-39,ReLU-2-38,256,256,0,256,0
+Quant_IP-2-39,Sigmoid-2-40,Quant_IP-2-39,256,1,259,259,0
+Sigmoid-2-40,LAST_LAYER,,1,1,0,1,0
