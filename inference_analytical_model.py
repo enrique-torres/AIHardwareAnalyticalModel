@@ -16,7 +16,7 @@ def calculate_transfer_time(size_in_bits: int, source_bandwith: int, destination
         bandwidth = source_bandwith
     return size_in_bits / bandwidth
 
-def calculate_time_weights_L1(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, compute_units: int, compute_bitlength: str, software_overhead: float, act_in_size: int, act_out_size: int, wgt_size: int, act_in_memory_level: str, wgt_memory_level: str):
+def calculate_time_weights_L1(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, compute_units: int, compute_bitlength: str, software_overhead: float, act_in_size: int, act_out_size: int, wgt_size_available: int, wgt_size_arbitrary: int, act_in_memory_level: str, wgt_memory_level: str):
     # First simulate the writing of output activations from previous layer, except in the first layer's case. We also assume that the last layer's output activations are written to DRAM
     if layer.previous_layer != None:
         prev_out_act_write_time = calculate_transfer_time(act_in_size, memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy[act_in_memory_level]['bandwidth'])
@@ -26,18 +26,25 @@ def calculate_time_weights_L1(layer: Layer, memory_hierarchy: Dict, datatypes: D
         out_act_write_time = calculate_transfer_time(act_out_size, memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['DRAM']['bandwidth'])
     else:
         out_act_write_time = 0
+    # We have to first read the layer weights onto on-chip memory if they fit
+    if wgt_memory_level != 'DRAM':
+        wgt_first_read_time = calculate_transfer_time(wgt_size_available, memory_hierarchy['DRAM']['bandwidth'], memory_hierarchy[wgt_memory_level]['bandwidth'])
+    else:
+        wgt_first_read_time = 0
     # Then we simulate reading the weights of the layer from DRAM to L1
-    wgt_read_time = calculate_transfer_time(wgt_size, memory_hierarchy['DRAM']['bandwidth'], memory_hierarchy[wgt_memory_level]['bandwidth'])
+    wgt_read_time = calculate_transfer_time(wgt_size_available, memory_hierarchy['DRAM']['bandwidth'], memory_hierarchy[wgt_memory_level]['bandwidth'])
     # Then we simulate reading the input activations from the level they are at to L1
     act_in_read_time = calculate_transfer_time(act_in_size, memory_hierarchy[act_in_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
     # Finally we also need to calculate the compute time for the layer. We can assume that that while we have to wait for the output activations from the previous layer to be written,
     # memory transfers and compute can happen in parallel. For this reason, our total time will be the maximum between all the read transfers and the compute time, plus the write time
     compute_time = layer.forward_macs / (datatypes[compute_bitlength]['compute_throughput'] * compute_units) * (1 + software_overhead)
-    transfer_time = prev_out_act_write_time + out_act_write_time + wgt_read_time + act_in_read_time
-    total_time = prev_out_act_write_time + out_act_write_time + max(wgt_read_time + act_in_read_time, compute_time)
+    transfer_time = wgt_first_read_time + prev_out_act_write_time + out_act_write_time + wgt_read_time + act_in_read_time
+    #print(compute_time)
+    #print(wgt_first_read_time, prev_out_act_write_time, out_act_write_time, wgt_read_time, act_in_read_time)
+    total_time = wgt_first_read_time + prev_out_act_write_time + out_act_write_time + max(wgt_read_time + act_in_read_time, compute_time)
     return total_time, transfer_time, compute_time
 
-def calculate_time_weights_not_L1(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, compute_units: int, compute_bitlength: str, software_overhead: float, act_in_size: int, act_out_size: int, wgt_size: int, act_in_memory_level: str, wgt_memory_level: str):
+def calculate_time_weights_not_L1(layer: Layer, memory_hierarchy: Dict, datatypes: Dict, compute_units: int, compute_bitlength: str, software_overhead: float, act_in_size: int, act_out_size: int, wgt_size_available: int, wgt_size_arbitrary: int, act_in_memory_level: str, wgt_memory_level: str):
     # First simulate the writing of output activations from previous layer, except in the first layer's case. We also assume that the last layer's output activations are written to DRAM
     if layer.previous_layer != None:
         prev_out_act_write_time = calculate_transfer_time(act_in_size, memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy[act_in_memory_level]['bandwidth'])
@@ -47,29 +54,34 @@ def calculate_time_weights_not_L1(layer: Layer, memory_hierarchy: Dict, datatype
         out_act_write_time = calculate_transfer_time(act_out_size, memory_hierarchy['L1_cache']['bandwidth'], memory_hierarchy['DRAM']['bandwidth'])
     else:
         out_act_write_time = 0
-    
+    # We have to first read the layer weights onto on-chip memory if they fit
+    if wgt_memory_level != 'DRAM':
+        wgt_first_read_time = calculate_transfer_time(wgt_size_arbitrary, memory_hierarchy['DRAM']['bandwidth'], memory_hierarchy[wgt_memory_level]['bandwidth'])
+    else:
+        wgt_first_read_time = 0
+
     # Then we have to decide whether to mini-batch weights or activations. If we minibatch activations, we need to read all the weights for each chunk of activations.
     # If we decide to mini-batch weights, we need to read all activations for each chunk of weights. As such, we optimize transfers by mini-batching the larger
     # footprint generator of the two
-    if act_in_size > wgt_size:
+    if act_in_size > wgt_size_available:
         # Then we simulate reading the input activations from the level they are at to L1
         act_in_read_time = calculate_transfer_time(act_in_size, memory_hierarchy[act_in_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
         total_activation_size = act_in_size + act_out_size
         num_chunks_acts = math.ceil(total_activation_size / memory_hierarchy['L1_cache']['size'])
         #print(f"For layer {layer.name}, weight size: {wgt_size}, we require this many activation chunks: {num_chunks_acts} from level {act_in_memory_level}")
         # And then we calculate the weights reading time, which will be the equivalent for the size of the weights times the number of chunks of activations
-        wgt_read_time = calculate_transfer_time(wgt_size * num_chunks_acts, memory_hierarchy[wgt_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
+        wgt_read_time = calculate_transfer_time(wgt_size_available * num_chunks_acts, memory_hierarchy[wgt_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
     else:
-        wgt_read_time = calculate_transfer_time(wgt_size, memory_hierarchy[wgt_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
-        num_chunks_wgts = math.ceil(wgt_size / memory_hierarchy['L1_cache']['size'])
+        wgt_read_time = calculate_transfer_time(wgt_size_available, memory_hierarchy[wgt_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
+        num_chunks_wgts = math.ceil(wgt_size_available / memory_hierarchy['L1_cache']['size'])
         #print(f"For layer {layer.name}, activation size: {act_in_size}, we require this many weight chunks: {num_chunks_wgts} from level {wgt_memory_level}")
         act_in_read_time = calculate_transfer_time(act_in_size * num_chunks_wgts, memory_hierarchy[act_in_memory_level]['bandwidth'], memory_hierarchy['L1_cache']['bandwidth'])
     
     # Finally we also need to calculate the compute time for the layer. We can assume that that while we have to wait for the output activations from the previous layer to be written,
     # memory transfers and compute can happen in parallel. For this reason, our total time will be the maximum between all the read transfers and the compute time, plus the write time
     compute_time = layer.forward_macs / (datatypes[compute_bitlength]['compute_throughput'] * compute_units) * (1 + software_overhead)
-    transfer_time = prev_out_act_write_time + out_act_write_time + wgt_read_time + act_in_read_time
-    total_time = prev_out_act_write_time + out_act_write_time + max(wgt_read_time + act_in_read_time, compute_time)
+    transfer_time = wgt_first_read_time + prev_out_act_write_time + out_act_write_time + wgt_read_time + act_in_read_time
+    total_time = wgt_first_read_time + prev_out_act_write_time + out_act_write_time + max(wgt_read_time + act_in_read_time, compute_time)
     return total_time, transfer_time, compute_time
 
 def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datatypes: Dict, baseline_bitlength: str, batch_size: int, compute_units: int, software_overhead: float) -> Dict:
@@ -90,6 +102,9 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
         act_out_dtype = get_closest_datatype(act_bitlength, datatypes, layer.network_metadata)
         wgt_dtype = get_closest_datatype(wgt_bitlength, datatypes, layer.network_metadata)
         compute_dtype = get_closest_datatype(max(parse_datatype(act_out_dtype)[0], parse_datatype(wgt_dtype)[0]), datatypes, layer.network_metadata)
+        #print(act_bitlength, act_out_dtype)
+        #print(wgt_bitlength, wgt_dtype)
+        #print(compute_dtype)
 
         # Determine closest available datatype for input activations
         if layer.previous_layer != None:
@@ -150,25 +165,25 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
             total_time_baseline, transfer_time_baseline, compute_time_baseline = calculate_time_weights_L1(layer, memory_hierarchy_updated_baseline, datatypes, 
                                                                                                            compute_units, baseline_bitlength, software_overhead, 
                                                                                                            act_in_size_baseline, act_out_size_baseline, wgt_size_baseline, 
-                                                                                                           act_in_memory_level_baseline, wgt_memory_level_baseline)
+                                                                                                           wgt_size_baseline, act_in_memory_level_baseline, wgt_memory_level_baseline)
             #print(f"Weights fit on L1 for baseline of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_baseline}. Remaining space: {L1_size - wgt_size_baseline}")
         else:
             total_time_baseline, transfer_time_baseline, compute_time_baseline = calculate_time_weights_not_L1(layer, memory_hierarchy_updated_baseline, datatypes, 
                                                                                                            compute_units, baseline_bitlength, software_overhead, 
                                                                                                            act_in_size_baseline, act_out_size_baseline, wgt_size_baseline, 
-                                                                                                           act_in_memory_level_baseline, wgt_memory_level_baseline)
+                                                                                                           wgt_size_baseline, act_in_memory_level_baseline, wgt_memory_level_baseline)
             #print(f"Weights don't fit on L1 for baseline of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_baseline}. Selected weights level: {wgt_memory_level_baseline}")
         if wgt_memory_level_optimized == 'L1_cache':
             total_time_optimized, transfer_time_optimized, compute_time_optimized = calculate_time_weights_L1(layer, memory_hierarchy_updated_optimized, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
                                                                                                               act_in_size_optimized, act_out_size_optimized, wgt_size_optimized, 
-                                                                                                              act_in_memory_level_optimized, wgt_memory_level_optimized)
+                                                                                                              wgt_size_optimized,  act_in_memory_level_optimized, wgt_memory_level_optimized)
             #print(f"Weights fit on L1 for optimized of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_optimized}. Remaining space: {L1_size - wgt_size_optimized}")
         else:
             total_time_optimized, transfer_time_optimized, compute_time_optimized = calculate_time_weights_not_L1(layer, memory_hierarchy_updated_optimized, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
                                                                                                               act_in_size_optimized, act_out_size_optimized, wgt_size_optimized, 
-                                                                                                              act_in_memory_level_optimized, wgt_memory_level_optimized)
+                                                                                                              wgt_size_optimized,  act_in_memory_level_optimized, wgt_memory_level_optimized)
             #print(f"Weights don't fit on L1 for optimized of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_optimized}. Selected weights level: {wgt_memory_level_optimized}")
         if wgt_memory_level_arbitrary == 'L1_cache':
             # On chip, the arbitrary bitlengths will be converted to available datatypes by software/hardware compressor/decompressor units. As such, unless our architecture is bit-serial
@@ -189,7 +204,7 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
             total_time_arbitrary, transfer_time_arbitrary, compute_time_arbitrary = calculate_time_weights_L1(layer, memory_hierarchy_updated_arbitrary, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
                                                                                                               act_in_real_transfer_data, act_out_size_arbitrary, wgt_real_transfer_data, 
-                                                                                                              act_in_real_memory_level, wgt_real_memory_level)
+                                                                                                              wgt_size_arbitrary, act_in_real_memory_level, wgt_real_memory_level)
             #print(f"Weights fit on L1 for arbitrary of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_arbitrary}. Remaining space: {L1_size - wgt_size_arbitrary}")
         else:
             # On chip, the arbitrary bitlengths will be converted to available datatypes by software/hardware compressor/decompressor units. As such, unless our architecture is bit-serial
@@ -210,7 +225,7 @@ def simulate_layer(layer: Layer, layer_depth: int, memory_hierarchy: Dict, datat
             total_time_arbitrary, transfer_time_arbitrary, compute_time_arbitrary = calculate_time_weights_not_L1(layer, memory_hierarchy_updated_arbitrary, datatypes, 
                                                                                                               compute_units, compute_dtype, software_overhead, 
                                                                                                               act_in_real_transfer_data, act_out_size_arbitrary, wgt_real_transfer_data, 
-                                                                                                              act_in_real_memory_level, wgt_real_memory_level)
+                                                                                                              wgt_size_arbitrary, act_in_real_memory_level, wgt_real_memory_level)
             #print(f"Weights don't fit on L1 for arbitrary of layer {layer.name}. L1 size: {L1_size}. Weights size: {wgt_size_arbitrary}. Selected weights level: {wgt_memory_level_arbitrary}")
 
         total_transfer_time_baseline += transfer_time_baseline
